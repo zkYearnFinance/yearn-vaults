@@ -36,6 +36,7 @@ decimals: public(uint256)
 
 balanceOf: public(HashMap[address, uint256])
 allowance: public(HashMap[address, HashMap[address, uint256]])
+nonces: public(HashMap[address, uint256]) # Used for permit() allowance management
 totalSupply: public(uint256)
 
 token: public(ERC20)
@@ -93,6 +94,16 @@ performanceFee: public(uint256)  # Governance Fee for performance of Vault (give
 FEE_MAX: constant(uint256) = 10_000  # 100%, or 10k basis points
 BLOCKS_PER_YEAR: constant(uint256) = 2_300_000
 
+# EIP-712
+DOMAIN_TYPE_HASH: constant(bytes32) = keccak256(
+    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+)
+PERMIT_TYPE_HASH: constant(bytes32) = keccak256(
+    "Permit(address holder,address spender,uint256 nonce,uint256 expiry,bool allowed)"
+)
+domainSeparator: bytes32
+
+
 @external
 def __init__(
     _token: address,
@@ -120,6 +131,13 @@ def __init__(
     self.depositLimit = MAX_UINT256  # Start unlimited
     self.lastReport = block.number
 
+    self.domainSeparator = keccak256(concat(
+        DOMAIN_TYPE_HASH,           # EIP712 Domain Type Identifier Hash
+        keccak256(self.name),       # EIP712 Domain: name
+        keccak256(API_VERSION),     # EIP712 Domain: version
+        convert(chain.id, bytes32), # EIP712 Domain: chainId (TODO: use EIP-1344)
+        convert(self, bytes32)      # EIP712 Domain: verifyingContract
+    ))
 
 @pure
 @external
@@ -218,11 +236,37 @@ def transfer(_to: address, _value: uint256) -> bool:
 
 
 @external
-def transferFrom(_from : address, _to : address, _value : uint256) -> bool:
+def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
     if self.allowance[_from][msg.sender] < MAX_UINT256:  # Unlimited approval (saves an SSTORE)
        self.allowance[_from][msg.sender] -= _value
     self._transfer(_from, _to, _value)
     return True
+
+
+@external
+def permit(_holder: address, _spender: address, _nonce: uint256, _expiry: uint256, _allowed: bool, _v: uint256, _r: uint256, _s: uint256):
+    digest: bytes32 = keccak256(concat(
+        convert(b"\x19\x01", bytes32),
+        self.domainSeparator,
+        keccak256(concat(PERMIT_TYPE_HASH,
+                         convert(_holder, bytes32),
+                         convert(_spender, bytes32),
+                         convert(_nonce, bytes32),
+                         convert(_expiry, bytes32),
+                         convert(_allowed, bytes32)))))
+    assert _holder != ZERO_ADDRESS
+    assert _holder == ecrecover(digest, _v, _r, _s)
+    assert (_expiry == 0 or block.timestamp <= _expiry)
+
+    self.nonces[_holder] += 1
+    assert _nonce == self.nonces[_holder]
+
+    can: uint256 = 0
+    if _allowed:
+        can = MAX_UINT256
+
+    self.allowance[_holder][_spender] = can
+    log Approval(_holder, _spender, can)
 
 
 @external
