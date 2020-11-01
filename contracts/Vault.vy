@@ -247,9 +247,10 @@ def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
 def permit(_holder: address, _spender: address, _nonce: uint256, _expiry: uint256, _allowed: bool, _v: uint256, _r: uint256, _s: uint256):
     assert _holder != ZERO_ADDRESS
     assert (_expiry == 0 or block.timestamp <= _expiry)
-    self.nonces[_holder] += 1
-    assert _nonce == self.nonces[_holder]
-    
+
+    expectedNonce: uint256 = self.nonces[_holder] + 1
+    assert _nonce == expectedNonce
+
     digest: bytes32 = keccak256(concat(
         convert(b"\x19\x01", bytes32),
         self.domainSeparator,
