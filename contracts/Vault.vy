@@ -263,6 +263,8 @@ def permit(_holder: address, _spender: address, _nonce: uint256, _expiry: uint25
     
     assert _holder == ecrecover(digest, _v, _r, _s)
 
+    self.nonces[_holder] = expectedNonce
+
     can: uint256 = 0
     if _allowed:
         can = MAX_UINT256
