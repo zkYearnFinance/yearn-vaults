@@ -135,7 +135,7 @@ def __init__(
         DOMAIN_TYPE_HASH,           # EIP712 Domain Type Identifier Hash
         keccak256(self.name),       # EIP712 Domain: name
         keccak256(API_VERSION),     # EIP712 Domain: version
-        convert(chain.id, bytes32), # EIP712 Domain: chainId (TODO: use EIP-1344)
+        convert(chain.id, bytes32), # EIP712 Domain: chainId
         convert(self, bytes32)      # EIP712 Domain: verifyingContract
     ))
 
@@ -245,6 +245,11 @@ def transferFrom(_from: address, _to: address, _value: uint256) -> bool:
 
 @external
 def permit(_holder: address, _spender: address, _nonce: uint256, _expiry: uint256, _allowed: bool, _v: uint256, _r: uint256, _s: uint256):
+    assert _holder != ZERO_ADDRESS
+    assert (_expiry == 0 or block.timestamp <= _expiry)
+    self.nonces[_holder] += 1
+    assert _nonce == self.nonces[_holder]
+    
     digest: bytes32 = keccak256(concat(
         convert(b"\x19\x01", bytes32),
         self.domainSeparator,
@@ -254,12 +259,8 @@ def permit(_holder: address, _spender: address, _nonce: uint256, _expiry: uint25
                          convert(_nonce, bytes32),
                          convert(_expiry, bytes32),
                          convert(_allowed, bytes32)))))
-    assert _holder != ZERO_ADDRESS
+    
     assert _holder == ecrecover(digest, _v, _r, _s)
-    assert (_expiry == 0 or block.timestamp <= _expiry)
-
-    self.nonces[_holder] += 1
-    assert _nonce == self.nonces[_holder]
 
     can: uint256 = 0
     if _allowed:
